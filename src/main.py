@@ -38,7 +38,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stop_machine = QtWidgets.QPushButton(self.central_widget)
         self.reset_machine = QtWidgets.QPushButton(self.central_widget)
         self.do_one_step = QtWidgets.QPushButton(self.central_widget)
-        self.run_machine_code = QtWidgets.QPushButton(self.central_widget)
+        self.run_assembly = QtWidgets.QPushButton(self.central_widget)
 
         # Labels
         self.program_label = QtWidgets.QLabel(self.central_widget)
@@ -49,13 +49,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.buttons_label = QtWidgets.QLabel(self.central_widget)
         self.cycle_label = QtWidgets.QLabel(self.central_widget)
 
-        # Executors
-        self.device = Device()
-
         # Setup
         self.setup_ui()
         self.retranslate_ui()
         self.connect_actions()
+
+        # Executors
+        self._stop = False
+        self.device = Device()
 
     def setup_ui(self):
         # Main window
@@ -107,8 +108,8 @@ class MainWindow(QtWidgets.QMainWindow):
         segoe_font.setFamily("Segoe UI")
         segoe_font.setPointSize(12)
 
-        self.run_machine_code.setGeometry(QtCore.QRect(1000, 380, 191, 38))
-        self.run_machine_code.setFont(segoe_font)
+        self.run_assembly.setGeometry(QtCore.QRect(1000, 380, 191, 38))
+        self.run_assembly.setFont(segoe_font)
 
         self.do_one_step.setGeometry(QtCore.QRect(1000, 423, 191, 38))
         self.do_one_step.setFont(segoe_font)
@@ -261,7 +262,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.stop_machine.setText(translate("MainWindow", "Stop"))
         self.reset_machine.setText(translate("MainWindow", "Reset"))
         self.do_one_step.setText(translate("MainWindow", "Step"))
-        self.run_machine_code.setText(translate("MainWindow", "Run"))
+        self.run_assembly.setText(translate("MainWindow", "Run"))
 
     def get_program(self):
         program = self.assembly_code.toPlainText().splitlines()
@@ -315,11 +316,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # No program given
         if not program:
-            self.output.item(0).setText(self.output.item(0).text() + ' Done.')
+            self.set_output_item_text(first_item)
+            self.output.addItem(QtWidgets.QListWidgetItem())
+            self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
             return
 
         codes, result, output, symbols = self.device.generate_output(program)
-        self.output.item(0).setText(self.output.item(0).text() + ' Done.')
+        self.set_output_item_text(first_item)
 
         # Output the machine_code
         for machine_code in codes:

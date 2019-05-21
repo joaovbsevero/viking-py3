@@ -19,12 +19,7 @@ class Memory:
         self.memory = []
         self.terminput = []
         self.cycles = 0
-
-    def compile_assembly(self, program_list):
-        if self.check(program_list):
-            return '[program has errors]', '', ''
-        else:
-            return (*self.load(program_list), self.run())
+        self.steps = []
 
     def reset(self):
         self.context = [
@@ -308,5 +303,10 @@ if __name__ == "__main__":
     ass = Assembler()
     aux = Memory()
     with open(str((pathlib.Path(__file__).parent.parent / 'examples' / 'ninetoone.asm').absolute())) as f:
-        out = ass.generate_assembly(f.read().split('\n'))
-        print(''.join(map(str, aux.compile_assembly(out))))
+        out = ass.generate_assembly(f.read().split('\n'))[0]
+        if not aux.check(out):
+            aux.load(out)
+            aux.do_steps()
+            print('\n'.join(map(str, aux.steps)))
+        else:
+            print('errors')
