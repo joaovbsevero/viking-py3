@@ -1,4 +1,4 @@
 # Viking ISA
 
-This is an experimental ISA for a very simple load/store architecture.
+Version of the original viking simulator from Sergio Johann Filho for python 3
 
