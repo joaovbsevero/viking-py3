@@ -12,6 +12,18 @@ class Device:
         self.memory.reset()
 
         assembly, symbols = self.assembler.generate_assembly(program)
-        program_info, machine_code, run_output = self.memory.compile_assembly(assembly)
+        if not self.memory.check(assembly):
+            program_info, machine_code = self.memory.load(assembly)
+            output = self.memory.do_steps()
 
-        return machine_code, program_info, run_output, symbols
+            return machine_code, program_info, output, symbols
+
+        else:
+            return [], ['Error'], [], []
+
+    def reset(self):
+        self.assembler.reset()
+        self.memory.reset()
+
+    def get_steps(self):
+        return self.memory.steps

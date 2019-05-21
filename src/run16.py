@@ -2,6 +2,9 @@
 
 import sys
 import re
+from collections import namedtuple
+
+Step = namedtuple('Step', 'context carry memory terminput cycle output message')
 
 
 class Memory:
@@ -34,21 +37,64 @@ class Memory:
         self.memory = []
         self.terminput = []
         self.cycles = 0
+        self.steps = []
 
-    @staticmethod
-    def check(program):
-        for lin in program:
-            flds = [l for l in re.split('[\r\t\n ]', lin) if l]
-            if len(flds) != 2:
-                return 1
-            for f in flds:
-                if f == '****':
-                    return 1
-        return 0
+    def do_steps(self):
+        response = []
+
+        while 1:
+            step, result = self.do_step()
+            if not result:
+                break
+            if self.context[7] < self.context[9]:
+                response.append('stack overflow detected!')
+                break
+
+            self.cycles += 1
+
+        response.append('\n\n[ok] ')
+        response.append(f'{self.cycles} cycles')
+
+        return response
+
+    def do_step(self):
+        message = ''
+        result = 0
+        output = ''
+
+        if self.memory:
+            result, output = self.cycle()
+            if result:
+                if self.context[7] < self.context[9]:
+                    message = "\nStack overflow detected at %04x.\n" % self.context[8]
+
+            else:
+                message = "\nProgram halted at %04x.\n" % self.context[8]
+        else:
+            message = "\nNo program in memory."
+
+        current_memory = []
+        for i in self.memory:
+            if i:
+                current_memory.append(i)
+            else:
+                break
+
+        current_step = Step(
+            context=self.context.copy(),
+            carry=self.carry,
+            memory=current_memory,
+            terminput=self.terminput.copy(),
+            output=output,
+            cycle=self.cycles,
+            message=message)
+        self.steps.append(current_step)
+
+        return current_step, result
 
     def load(self, program):
         program_info = []
-        symbols = []
+        machine_code = []
         lines = 0
         codes = {
             0x0000: "and", 0x1000: "or", 0x2000: "xor", 0x3000: "slt",
@@ -65,16 +111,16 @@ class Memory:
             self.memory.append(data)
             if data & 0x0800:
                 if (data & 0xf000) in codes:
-                    symbols.append(
+                    machine_code.append(
                         lin + "     %s r%d,%d" % (codes[data & 0xf000], (data & 0x0700) >> 8, (data & 0x00ff)))
                 else:
-                    symbols.append(lin + "     ???")
+                    machine_code.append(lin + "     ???")
             else:
                 if (data & 0xf003) in codes:
-                    symbols.append(lin + "     %s r%d,r%d,r%d" % (
+                    machine_code.append(lin + "     %s r%d,r%d,r%d" % (
                         codes[data & 0xf003], (data & 0x0700) >> 8, (data & 0x00e0) >> 5, (data & 0x001c) >> 2))
                 else:
-                    symbols.append(lin + "     ???")
+                    machine_code.append(lin + "     ???")
             lines += 1
 
         program_info.append("Program (code + data): %d bytes" % (len(self.memory) * 2))
@@ -87,56 +133,7 @@ class Memory:
         self.context[7] = len(self.memory) * 2 - 2
         program_info.append("Memory size: %d" % (len(self.memory) * 2))
 
-        return program_info, symbols
-
-    def run(self):
-        codes = {
-            0x0000: "and", 0x1000: "or", 0x2000: "xor", 0x3000: "slt",
-            0x4000: "sltu", 0x5000: "add", 0x5001: "adc", 0x6000: "sub",
-            0x6001: "sbc", 0x8000: "ldr", 0x9000: "ldc", 0xa000: "lsr",
-            0xa001: "asr", 0xa002: "ror", 0x0002: "ldb", 0x1002: "stb",
-            0x4002: "ldw", 0x5002: "stw", 0xc000: "bez", 0xd000: "bnz"
-        }
-        cycles = 0
-        args = sys.argv[1:]
-        response = []
-
-        while True:
-            inst = self.memory[self.context[8] >> 1]
-            last_pc = self.context[8]
-
-            result, message = self.cycle()
-            if message:
-                response.append(message)
-            if not result:
-                break
-            cycles += 1
-
-            if self.context[7] < self.context[9]:
-                response.append('stack overflow detected!')
-                break
-
-            if args:
-                if inst & 0x0800:
-                    response.append(
-                        'pc: %04x instruction: %s r%d,%d' % (
-                            last_pc, codes[inst & 0xf000], (inst & 0x0700) >> 8, (inst & 0x00ff))
-                    )
-                else:
-                    response.append(
-                        'pc: %04x instruction: %s r%d,r%d,r%d' % (
-                            last_pc, codes[inst & 0xf003], (inst & 0x0700) >> 8, (inst & 0x00e0) >> 5,
-                            (inst & 0x001c) >> 2)
-                    )
-                response.append('r0: [%04x] r1: [%04x] r2: [%04x] r3: [%04x]' % (
-                    self.context[0], self.context[1], self.context[2], self.context[3]))
-                response.append('r4: [%04x] r5: [%04x] r6: [%04x] r7: [%04x]\n' % (
-                    self.context[4], self.context[5], self.context[6], self.context[7]))
-
-        response.append('\n\n[ok] ')
-        response.append(f'{cycles} cycles')
-
-        return response
+        return program_info, machine_code
 
     def cycle(self):
         message = ''
@@ -186,7 +183,7 @@ class Memory:
                 self.context[rst] = (self.carry << 15) & ((rs1 & 0xffff) >> 1)
             else:
                 message += "[error (invalid shift instruction)]"
-            carry = rs1 & 1
+            self.carry = rs1 & 1
         elif (imm == 0 and (op2 == 0 or op2 == 1)) or imm == 1:
             if opc == 0:
                 if imm == 1:
@@ -213,13 +210,13 @@ class Memory:
                     self.context[rst] = (rs1 & 0xffff) + (rs2 & 0xffff) + self.carry
                 else:
                     self.context[rst] = (rs1 & 0xffff) + (rs2 & 0xffff)
-                carry = (self.context[rst] & 0x10000) >> 16
+                self.carry = (self.context[rst] & 0x10000) >> 16
             elif opc == 6:
                 if imm == 0 and op2 == 1:
                     self.context[rst] = (rs1 & 0xffff) - (rs2 & 0xffff) - self.carry
                 else:
                     self.context[rst] = (rs1 & 0xffff) - (rs2 & 0xffff)
-                carry = (self.context[rst] & 0x10000) >> 16
+                self.carry = (self.context[rst] & 0x10000) >> 16
             elif opc == 8:
                 self.context[rst] = rs2
             elif opc == 9:
@@ -291,6 +288,17 @@ class Memory:
     @staticmethod
     def to_hex(n):
         return '%s' % ('0000%x' % (n & 0xffff))[-4:]
+
+    @staticmethod
+    def check(program):
+        for lin in program:
+            flds = [l for l in re.split('[\r\t\n ]', lin) if l]
+            if len(flds) != 2:
+                return 1
+            for f in flds:
+                if f == '****':
+                    return 1
+        return 0
 
 
 if __name__ == "__main__":
