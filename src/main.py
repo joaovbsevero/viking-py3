@@ -279,10 +279,33 @@ class MainWindow(QtWidgets.QMainWindow):
         return program_without_end_lines
 
     def connect_actions(self):
-        self.run_machine_code.clicked.connect(self.run_assembly)
+        self.run_assembly.clicked.connect(self.run)
         self.actionNew.triggered.connect(self.assembly_code.clear)
+        self.actionAssemble.triggered.connect(self.assemble)
+        self.actionExit.triggered.connect(self.quit_app)
+        self.reset_machine.clicked.connect(self.reset)
+        self.stop_machine.clicked.connect(self.stop)
 
-    def run_assembly(self):
+    def quit_app(self):
+        raise SystemExit
+
+    def set_output_item_text(self, item):
+        idx = 0
+        while 1:
+            if item == self.output.item(idx):
+                self.output.item(idx).setText(item.text() + ' Done.')
+                break
+            idx += 1
+
+    def reset(self):
+        self.device.reset()
+        self.machine_code.clear()
+        self.mapped_symbols.clear()
+
+    def stop(self):
+        self._stop = True
+
+    def assemble(self):
         first_item = QtWidgets.QListWidgetItem('Assembling...')
         self.output.addItem(first_item)
         self.machine_code.clear()
@@ -310,9 +333,19 @@ class MainWindow(QtWidgets.QMainWindow):
             self.mapped_symbols.addItem(QtWidgets.QListWidgetItem(symbol))
 
         # Output the result of the program
-        self.output.addItem(QtWidgets.QListWidgetItem('Result: ' + ''.join(map(str, output))))
         self.output.addItem(QtWidgets.QListWidgetItem())
         self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
+
+    def run(self):
+        self.assemble()
+
+        # Simulates the machine doing the steps
+
+        # import time
+        # for step in self.device.get_steps():
+        #     time.sleep(2)
+        #     if not self._stop:
+        #         print(step)
 
 
 if __name__ == '__main__':
