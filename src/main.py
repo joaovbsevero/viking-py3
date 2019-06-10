@@ -1,3 +1,4 @@
+import time
 from PyQt5 import QtCore, QtGui, QtWidgets
 from device import Device
 
@@ -290,11 +291,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def quit_app(self):
         raise SystemExit
 
-    def set_output_item_text(self, item):
+    def set_output_item_text(self, item, text=' Done.'):
         idx = 0
         while 1:
             if item == self.output.item(idx):
-                self.output.item(idx).setText(item.text() + ' Done.')
+                self.output.item(idx).setText(item.text() + text)
                 break
             idx += 1
 
@@ -321,7 +322,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
             return
 
-        codes, result, output, symbols = self.device.generate_output(program)
+        response, steps, symbols, program_info, codes = self.device.generate_output(program)
         self.set_output_item_text(first_item)
 
         # Output the machine_code
@@ -329,7 +330,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.machine_code.addItem(QtWidgets.QListWidgetItem(machine_code))
 
         # Output the information about the program
-        for line in result:
+        for line in program_info:
             self.output.addItem(QtWidgets.QListWidgetItem(line))
 
         for symbol in symbols:
@@ -340,15 +341,62 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
 
     def run(self):
-        self.assemble()
+        first_item = QtWidgets.QListWidgetItem('Assembling...')
+        self.output.addItem(first_item)
+        self.machine_code.clear()
+        self.mapped_symbols.clear()
+
+        program = self.get_program()
+
+        # No program given
+        if not program:
+            self.set_output_item_text(first_item)
+            self.output.addItem(QtWidgets.QListWidgetItem())
+            self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
+            return
+
+        response, steps, symbols, program_info, codes = self.device.generate_output(program)
+        self.set_output_item_text(first_item)
+
+        for machine_code in codes:
+            self.machine_code.addItem(QtWidgets.QListWidgetItem(machine_code))
+
+        for line in program_info:
+            self.output.addItem(QtWidgets.QListWidgetItem(line))
+
+        for symbol in symbols:
+            self.mapped_symbols.addItem(QtWidgets.QListWidgetItem(symbol))
+
+        self.output.addItem(QtWidgets.QListWidgetItem())
+        self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
+
+        output_item = QtWidgets.QListWidgetItem()
+        self.output.addItem(output_item)
+        self.output.scrollToItem(output_item, QtWidgets.QAbstractItemView.PositionAtTop)
 
         # Simulates the machine doing the steps
+        for step in steps:
+            context = getattr(step, 'context')
+            carry = getattr(step, 'carry')
+            memmory = getattr(step, 'memory')
+            cycle = getattr(step, 'cycle')
+            output = getattr(step, 'output')
+            message = getattr(step, 'message')
+            self.cycle_label.setText(self.cycle_label.text().split(':')[0] + ':' + str(cycle))
 
-        # import time
-        # for step in self.device.get_steps():
-        #     time.sleep(2)
-        #     if not self._stop:
-        #         print(step)
+            if message:
+                self.output.addItem(QtWidgets.QListWidgetItem(message))
+                self.output.scrollToItem(output_item, QtWidgets.QAbstractItemView.PositionAtTop)
+                break
+
+            if output:
+                self.set_output_item_text(output_item, output)
+
+            self.wait(0.1)
+
+    def wait(self, seconds):
+        QtWidgets.qApp.processEvents()
+        time.sleep(seconds)
 
 
 if __name__ == '__main__':

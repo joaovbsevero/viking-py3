@@ -7,7 +7,7 @@ from collections import namedtuple
 Step = namedtuple('Step', 'context carry memory terminput cycle output message')
 
 
-class Memory:
+class CPU:
     def __init__(self):
         self.context = [
             0x0000, 0x0000, 0x0000, 0x0000,  # r0 - r3
@@ -47,7 +47,7 @@ class Memory:
 
             self.cycles += 1
 
-        response.append('\n\n[ok] ')
+        response.append('\n\nOk ')
         response.append(f'{self.cycles} cycles')
 
         return response
@@ -83,52 +83,10 @@ class Memory:
             output=output,
             cycle=self.cycles,
             message=message)
+
         self.steps.append(current_step)
 
         return current_step, result
-
-    def load(self, program):
-        program_info = []
-        machine_code = []
-        lines = 0
-        codes = {
-            0x0000: "and", 0x1000: "or", 0x2000: "xor", 0x3000: "slt",
-            0x4000: "sltu", 0x5000: "add", 0x5001: "adc", 0x6000: "sub",
-            0x6001: "sbc", 0x8000: "ldr", 0x9000: "ldc", 0xa000: "lsr",
-            0xa001: "asr", 0xa002: "ror", 0x0002: "ldb", 0x1002: "stb",
-            0x4002: "ldw", 0x5002: "stw", 0xc000: "bez", 0xd000: "bnz"
-        }
-
-        # load program into memory
-        for lin in program:
-            flds = [l for l in re.split('[\r\t\n ]', lin) if l]
-            data = int(flds[1], 16)
-            self.memory.append(data)
-            if data & 0x0800:
-                if (data & 0xf000) in codes:
-                    machine_code.append(
-                        lin + "     %s r%d,%d" % (codes[data & 0xf000], (data & 0x0700) >> 8, (data & 0x00ff)))
-                else:
-                    machine_code.append(lin + "     ???")
-            else:
-                if (data & 0xf003) in codes:
-                    machine_code.append(lin + "     %s r%d,r%d,r%d" % (
-                        codes[data & 0xf003], (data & 0x0700) >> 8, (data & 0x00e0) >> 5, (data & 0x001c) >> 2))
-                else:
-                    machine_code.append(lin + "     ???")
-            lines += 1
-
-        program_info.append("Program (code + data): %d bytes" % (len(self.memory) * 2))
-
-        self.context[9] = (len(self.memory) * 2) + 2
-
-        for i in range(lines, 28672):
-            self.memory.append(0)
-
-        self.context[7] = len(self.memory) * 2 - 2
-        program_info.append("Memory size: %d" % (len(self.memory) * 2))
-
-        return program_info, machine_code
 
     def cycle(self):
         message = ''
@@ -249,16 +207,7 @@ class Memory:
                 else:
                     self.memory[(rs2 & 0xffff) >> 1] = (self.memory[(rs2 & 0xffff) >> 1] & 0x00ff) | ((rs1 & 0xff) << 8)
             elif opc == 4:
-                if (rs2 & 0xffff) == 0xf004:  # emulate an input character device (address: 61444)
-                    if not self.terminput:
-                        self.terminput = input() + '\0'
-                    result = int(ord(self.terminput[0]))
-                    self.terminput = self.terminput[1:]
-                    self.context[rst] = result
-                elif (rs2 & 0xffff) == 0xf006:  # emulate an input integer device (address: 61446)
-                    self.context[rst] = int(input())
-                else:
-                    self.context[rst] = self.memory[(rs2 & 0xffff) >> 1]
+                self.context[rst] = self.memory[(rs2 & 0xffff) >> 1]
             elif opc == 5:
                 if (rs2 & 0xffff) == 0xf000:  # emulate an output character device (address: 61440)
                     message += chr(rs1 & 0xff)
@@ -279,6 +228,49 @@ class Memory:
         self.context[rst] &= 0xffff
 
         return 1, message
+
+    def load(self, program):
+        program_info = []
+        machine_code = []
+        lines = 0
+        codes = {
+            0x0000: "and", 0x1000: "or", 0x2000: "xor", 0x3000: "slt",
+            0x4000: "sltu", 0x5000: "add", 0x5001: "adc", 0x6000: "sub",
+            0x6001: "sbc", 0x8000: "ldr", 0x9000: "ldc", 0xa000: "lsr",
+            0xa001: "asr", 0xa002: "ror", 0x0002: "ldb", 0x1002: "stb",
+            0x4002: "ldw", 0x5002: "stw", 0xc000: "bez", 0xd000: "bnz"
+        }
+
+        # load program into memory
+        for lin in program:
+            flds = [l for l in re.split('[\r\t\n ]', lin) if l]
+            data = int(flds[1], 16)
+            self.memory.append(data)
+            if data & 0x0800:
+                if (data & 0xf000) in codes:
+                    machine_code.append(
+                        lin + "     %s r%d,%d" % (codes[data & 0xf000], (data & 0x0700) >> 8, (data & 0x00ff)))
+                else:
+                    machine_code.append(lin + "     ???")
+            else:
+                if (data & 0xf003) in codes:
+                    machine_code.append(lin + "     %s r%d,r%d,r%d" % (
+                        codes[data & 0xf003], (data & 0x0700) >> 8, (data & 0x00e0) >> 5, (data & 0x001c) >> 2))
+                else:
+                    machine_code.append(lin + "     ???")
+            lines += 1
+
+        program_info.append("Program (code + data): %d bytes" % (len(self.memory) * 2))
+
+        self.context[9] = (len(self.memory) * 2) + 2
+
+        for i in range(lines, 28672):
+            self.memory.append(0)
+
+        self.context[7] = len(self.memory) * 2 - 2
+        program_info.append("Memory size: %d" % (len(self.memory) * 2))
+
+        return program_info, machine_code
 
     @staticmethod
     def to_hex(n):
@@ -301,12 +293,12 @@ if __name__ == "__main__":
     from assemble16 import Assembler
 
     ass = Assembler()
-    aux = Memory()
+    aux = CPU()
     with open(str((pathlib.Path(__file__).parent.parent / 'examples' / 'ninetoone.asm').absolute())) as f:
         out = ass.generate_assembly(f.read().split('\n'))[0]
         if not aux.check(out):
             aux.load(out)
             aux.do_steps()
-            print('\n'.join(map(str, aux.steps)))
+            print("\n".join(map(str, aux.steps)))
         else:
             print('errors')
