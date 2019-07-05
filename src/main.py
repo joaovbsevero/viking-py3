@@ -57,6 +57,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Executors
         self._stop = False
+        self._reset = False
+        self._assembled = False
+        self._running = False
+        self._stepping = False
+        self._current_step = 0
+        self._current_id = None
         self.device = Device()
 
     def setup_ui(self):
@@ -101,7 +107,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.buttons_label.setGeometry(QtCore.QRect(1050, 305, 81, 31))
         self.buttons_label.setFont(segoe_font)
 
-        self.cycle_label.setGeometry(QtCore.QRect(1050, 345, 91, 21))
+        self.cycle_label.setGeometry(QtCore.QRect(1050, 345, 115, 21))
         self.cycle_label.setFont(consolas_font)
 
     def setup_buttons_ui(self):
@@ -255,7 +261,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.registers_table.item(6).setText("r6 (lr) : 0000")
         self.registers_table.item(7).setText("r7 (sp) : dffe")
         self.registers_table.item(9).setText("PC      : 0000")
-        self.registers_table.setSortingEnabled(False)
 
         self.output.setSortingEnabled(False)
 
@@ -272,7 +277,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return []
 
         program_without_end_lines = program.copy()
-        for i in range(len(program)-1, 0, -1):
+        for i in range(len(program) - 1, 0, -1):
             if not program[i]:
                 program_without_end_lines.pop(i)
             else:
@@ -282,6 +287,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def connect_actions(self):
         self.run_assembly.clicked.connect(self.run)
+        self.do_one_step.clicked.connect(self.do_step)
         self.actionNew.triggered.connect(self.assembly_code.clear)
         self.actionAssemble.triggered.connect(self.assemble)
         self.actionExit.triggered.connect(self.quit_app)
@@ -291,23 +297,35 @@ class MainWindow(QtWidgets.QMainWindow):
     def quit_app(self):
         raise SystemExit
 
-    def set_output_item_text(self, item, text=' Done.'):
+    def set_output_item_text(self, item_id, text=' Done.'):
         idx = 0
         while 1:
-            if item == self.output.item(idx):
-                self.output.item(idx).setText(item.text() + text)
-                break
+            if self.output.item(idx) is None:
+                return False
+
+            if str(item_id) == str(id(self.output.item(idx))):
+                self.output.item(idx).setText(self.output.item(idx).text() + text)
+                return True
             idx += 1
 
     def reset(self):
-        self.device.reset()
-        self.machine_code.clear()
-        self.mapped_symbols.clear()
+        self._stop = True
+        self._stepping = False
+        self._current_step = 0
+        self._current_id = None
+
+        if not self._running:
+            self.device.reset()
+            self.machine_code.clear()
+            self.mapped_symbols.clear()
+            self.cycle_label.setText('Cycle: 0')
+            self._assembled = False
 
     def stop(self):
         self._stop = True
 
     def assemble(self):
+        self._assembled = True
         first_item = QtWidgets.QListWidgetItem('Assembling...')
         self.output.addItem(first_item)
         self.machine_code.clear()
@@ -341,62 +359,84 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
 
     def run(self):
-        first_item = QtWidgets.QListWidgetItem('Assembling...')
-        self.output.addItem(first_item)
-        self.machine_code.clear()
-        self.mapped_symbols.clear()
+        if not self._assembled:
+            self.assemble()
 
-        program = self.get_program()
+        self._running = True
 
-        # No program given
-        if not program:
-            self.set_output_item_text(first_item)
-            self.output.addItem(QtWidgets.QListWidgetItem())
-            self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
-            return
+        self._stop = False
+        self._reset = False
 
-        response, steps, symbols, program_info, codes = self.device.generate_output(program)
-        self.set_output_item_text(first_item)
-
-        for machine_code in codes:
-            self.machine_code.addItem(QtWidgets.QListWidgetItem(machine_code))
-
-        for line in program_info:
-            self.output.addItem(QtWidgets.QListWidgetItem(line))
-
-        for symbol in symbols:
-            self.mapped_symbols.addItem(QtWidgets.QListWidgetItem(symbol))
-
-        self.output.addItem(QtWidgets.QListWidgetItem())
-        self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
-
-        output_item = QtWidgets.QListWidgetItem()
-        self.output.addItem(output_item)
-        self.output.scrollToItem(output_item, QtWidgets.QAbstractItemView.PositionAtTop)
-
-        # Simulates the machine doing the steps
-        for step in steps:
-            context = getattr(step, 'context')
-            carry = getattr(step, 'carry')
-            memmory = getattr(step, 'memory')
-            cycle = getattr(step, 'cycle')
-            output = getattr(step, 'output')
-            message = getattr(step, 'message')
-            self.cycle_label.setText(self.cycle_label.text().split(':')[0] + ':' + str(cycle))
-
-            if message:
-                self.output.addItem(QtWidgets.QListWidgetItem(message))
-                self.output.scrollToItem(output_item, QtWidgets.QAbstractItemView.PositionAtTop)
+        while 1:
+            if not self.do_step():
                 break
 
-            if output:
-                self.set_output_item_text(output_item, output)
+            if self._stop:
+                if self._reset:
+                    self.device.reset()
+                    self.machine_code.clear()
+                    self.mapped_symbols.clear()
+                    self.cycle_label.setText('Cycle: 0')
+                    self._assembled = False
+                break
 
-            self.wait(0.1)
+        self._stop = False
+        self._reset = False
+        self._running = False
+
+    def do_step(self):
+        if not self._assembled:
+            self.assemble()
+
+        response, steps, symbols, program_info, codes = self.device.get_output()
+
+        if response is None:
+            item = QtWidgets.QListWidgetItem('No program written.')
+            self.output.addItem(item)
+            self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
+            self._assembled = False
+            return False
+
+        if len(steps) == self._current_step:
+            item = QtWidgets.QListWidgetItem('No more steps available.')
+            self.output.addItem(item)
+            self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
+            return False
+
+        if self._current_step == 0:
+            item = QtWidgets.QListWidgetItem()
+            self._current_id = id(item)
+            self.output.addItem(item)
+            self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
+
+        step = steps[self._current_step]
+        self._current_step += 1
+
+        context = getattr(step, 'context')
+        carry = getattr(step, 'carry')
+        memmory = getattr(step, 'memory')
+        cycle = getattr(step, 'cycle')
+        output = getattr(step, 'output')
+        message = getattr(step, 'message')
+        self.cycle_label.setText(self.cycle_label.text().split(':')[0] + ': ' + str(cycle))
+
+        if message:
+            item = QtWidgets.QListWidgetItem(message)
+            self.output.addItem(item)
+            self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
+            return False
+
+        if output:
+            self.set_output_item_text(self._current_id, output)
+
+        self.wait(0.05)
+        return True
 
     def wait(self, seconds):
         QtWidgets.qApp.processEvents()
-        time.sleep(seconds)
+        started = time.time()
+        while time.time() - started < seconds:
+            QtWidgets.qApp.processEvents()
 
 
 if __name__ == '__main__':
