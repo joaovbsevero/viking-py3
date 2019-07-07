@@ -1,4 +1,5 @@
 import time
+import re
 from PyQt5 import QtCore, QtGui, QtWidgets
 from device import Device
 
@@ -135,6 +136,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.machine_code.setGeometry(QtCore.QRect(430, 50, 290, 500))
         self.machine_code.setFont(consolas_font)
         self.machine_code.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.machine_code.setStyleSheet("""
+            QListWidget::item:selected{
+                background-color: #71d6ff;
+            }
+        """)
 
         self.mapped_symbols.setGeometry(QtCore.QRect(740, 50, 240, 500))
         self.mapped_symbols.setFont(consolas_font)
@@ -341,6 +347,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         response, steps, symbols, program_info, codes = self.device.generate_output(program)
+
         self.set_output_item_text(first_item)
 
         # Output the machine_code
@@ -415,10 +422,15 @@ class MainWindow(QtWidgets.QMainWindow):
         context = getattr(step, 'context')
         carry = getattr(step, 'carry')
         memmory = getattr(step, 'memory')
+        instruction = getattr(step, 'instruction')
         cycle = getattr(step, 'cycle')
         output = getattr(step, 'output')
         message = getattr(step, 'message')
         self.cycle_label.setText(self.cycle_label.text().split(':')[0] + ': ' + str(cycle))
+        if self._current_step == 1:
+            self.update_machine_code(str(instruction)[2:].rjust(4, '0'), True)
+        else:
+            self.update_machine_code(str(instruction)[2:].rjust(4, '0'), False)
 
         if message:
             item = QtWidgets.QListWidgetItem(message)
@@ -431,6 +443,35 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.wait(0.05)
         return True
+
+    def update_machine_code(self, current_instruction, first):
+        idx = 0
+        unselected = False
+        while 1:
+            if self.machine_code.item(idx) is None:
+                break
+
+            if re.findall(current_instruction, self.machine_code.item(idx).text()):
+                self.machine_code.item(idx).setSelected(True)
+                break
+
+            elif self.machine_code.item(idx).isSelected():
+                self.machine_code.item(idx).setSelected(False)
+                unselected = True
+
+            idx += 1
+
+        if not unselected and not first:
+            idx += 1
+            while not unselected:
+                if self.machine_code.item(idx) is None:
+                    break
+
+                if self.machine_code.item(idx).isSelected():
+                    self.machine_code.item(idx).setSelected(False)
+                    unselected = True
+
+                idx += 1
 
     def wait(self, seconds):
         QtWidgets.qApp.processEvents()

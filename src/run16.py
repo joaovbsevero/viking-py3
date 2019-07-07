@@ -1,7 +1,7 @@
 import re
 from collections import namedtuple
 
-Step = namedtuple('Step', 'context carry memory terminput cycle output message')
+Step = namedtuple('Step', 'context carry memory terminput cycle output instruction message')
 
 
 class CPU:
@@ -53,9 +53,10 @@ class CPU:
         message = ''
         result = 0
         output = ''
+        instruction = ''
 
         if self.memory:
-            result, output = self.cycle()
+            result, output, instruction = self.cycle()
             if result:
                 if self.context[7] < self.context[9]:
                     message = "\nStack overflow detected at %04x.\n" % self.context[8]
@@ -79,6 +80,7 @@ class CPU:
             terminput=self.terminput.copy(),
             output=output,
             cycle=self.cycles,
+            instruction=instruction,
             message=message)
 
         self.steps.append(current_step)
@@ -103,7 +105,7 @@ class CPU:
 
         # it's halt and catch fire, halt the simulator
         if instruction == 0x0003:
-            return 0, message
+            return 0, message, ''
 
         # decode and execute
         if imm == 0:
@@ -224,7 +226,7 @@ class CPU:
         # fix the stored word to the matching hardware size
         self.context[rst] &= 0xffff
 
-        return 1, message
+        return 1, message, hex(instruction)
 
     def load(self, program):
         program_info = []
@@ -243,6 +245,7 @@ class CPU:
             flds = [l for l in re.split('[\r\t\n ]', lin) if l]
             data = int(flds[1], 16)
             self.memory.append(data)
+
             if data & 0x0800:
                 if (data & 0xf000) in codes:
                     machine_code.append(
