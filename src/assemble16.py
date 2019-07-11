@@ -215,6 +215,9 @@ class Assembler:
 
         for lin in program:
             flds = [l for l in re.split('[\r\t\n ]', lin) if l]
+            if len(lin) == 0:
+                continue
+
             if lin[0] > ' ':
                 flds = flds[1:]
 

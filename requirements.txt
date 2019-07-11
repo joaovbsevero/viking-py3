@@ -1,0 +1,7 @@
+Click==7.0
+PyQt5==5.12.1
+PyQt5-sip==4.19.17
+PyQt5-stubs==5.12.1.0
+pyqt5-tools==5.11.3.1.4
+python-dotenv==0.10.1
+virtualenv==16.6.0
