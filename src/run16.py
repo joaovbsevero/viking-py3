@@ -1,53 +1,33 @@
 import re
 from collections import namedtuple
 
-Step = namedtuple('Step', 'context carry memory terminput cycle output instruction message')
+Step = namedtuple('Step', 'context memory cycle output instruction message')
 
 
 class CPU:
     def __init__(self):
         self.context = [
-            0x0000, 0x0000, 0x0000, 0x0000,  # r0 - r3
-            0x0000, 0x0000, 0x0000, 0xdffe,  # r4 - r7
-            0x0000, 0x0000  # pc, stack limit, carry
+            0x0000, 0x0000, 0x0000, 0x0000,
+            0x0000, 0x0000, 0x0000, 0xdffe,
+            0x0000, 0x0000
         ]
 
         self.carry = 0
         self.memory = []
-        self.terminput = []
         self.cycles = 0
         self.steps = []
 
     def reset(self):
         self.context = [
-            0x0000, 0x0000, 0x0000, 0x0000,  # r0 - r3
-            0x0000, 0x0000, 0x0000, 0xdffe,  # r4 - r7
-            0x0000, 0x0000  # pc, stack limit, carry
+            0x0000, 0x0000, 0x0000, 0x0000,
+            0x0000, 0x0000, 0x0000, 0xdffe,
+            0x0000, 0x0000
         ]
 
         self.carry = 0
         self.memory = []
-        self.terminput = []
         self.cycles = 0
         self.steps = []
-
-    def do_steps(self):
-        response = []
-
-        while 1:
-            step, result = self.do_step()
-            if not result:
-                break
-            if self.context[7] < self.context[9]:
-                response.append('stack overflow detected!')
-                break
-
-            self.cycles += 1
-
-        response.append('\n\nOk ')
-        response.append(f'{self.cycles} cycles')
-
-        return response
 
     def do_step(self):
         message = ''
@@ -66,24 +46,15 @@ class CPU:
         else:
             message = "\nNo program in memory."
 
-        current_memory = []
-        for i in self.memory:
-            if i:
-                current_memory.append(i)
-            else:
-                break
-
         current_step = Step(
             context=self.context.copy(),
-            carry=self.carry,
-            memory=current_memory,
-            terminput=self.terminput.copy(),
+            memory=self.memory.copy(),
             output=output,
             cycle=self.cycles,
             instruction=instruction,
             message=message)
 
-        self.steps.append(current_step)
+        self.cycles += 1
 
         return current_step, result
 

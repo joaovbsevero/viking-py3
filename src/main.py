@@ -1,5 +1,5 @@
-import time
 import re
+import time
 from PyQt5 import QtCore, QtGui, QtWidgets
 from device import Device
 
@@ -13,6 +13,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menubar = QtWidgets.QMenuBar(self)
         self.statusbar = QtWidgets.QStatusBar(self)
         self.assembly_code = QtWidgets.QPlainTextEdit(self.central_widget)
+        self.memory_dump_window = QtWidgets.QMainWindow(self)
 
         # Menu widgets
         self.menuProgram = QtWidgets.QMenu(self.menubar)
@@ -21,7 +22,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Action widgets
         self.actionNew = QtWidgets.QAction(self)
         self.actionLoad = QtWidgets.QAction(self)
-        self.actionLoad_additional = QtWidgets.QAction(self)
         self.actionSave_as = QtWidgets.QAction(self)
         self.actionAssemble = QtWidgets.QAction(self)
         self.actionExit = QtWidgets.QAction(self)
@@ -35,6 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output = QtWidgets.QListWidget(self.central_widget)
         self.registers_table = QtWidgets.QListWidget(self.central_widget)
         self.mapped_symbols = QtWidgets.QListWidget(self.central_widget)
+        self.memory_line_list = QtWidgets.QListWidget(self.memory_dump_window)
 
         # Buttons
         self.stop_machine = QtWidgets.QPushButton(self.central_widget)
@@ -48,8 +49,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.label_3 = QtWidgets.QLabel(self.central_widget)
         self.symbol_table_label = QtWidgets.QLabel(self.central_widget)
         self.registers_label = QtWidgets.QLabel(self.central_widget)
-        self.buttons_label = QtWidgets.QLabel(self.central_widget)
         self.cycle_label = QtWidgets.QLabel(self.central_widget)
+        self.label_value = QtWidgets.QLabel(self.central_widget)
 
         # Setup
         self.setup_ui()
@@ -64,6 +65,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._stepping = False
         self._current_step = 0
         self._current_id = None
+        self._breakpoint_value = None
+        self._delay = 0.05
         self.device = Device()
 
     def setup_ui(self):
@@ -105,11 +108,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.registers_label.setGeometry(QtCore.QRect(1040, 10, 111, 31))
         self.registers_label.setFont(segoe_font)
 
-        self.buttons_label.setGeometry(QtCore.QRect(1050, 305, 81, 31))
-        self.buttons_label.setFont(segoe_font)
+        self.cycle_label.setGeometry(QtCore.QRect(1055, 305, 81, 31))
+        self.cycle_label.setFont(segoe_font)
 
-        self.cycle_label.setGeometry(QtCore.QRect(1050, 345, 115, 21))
-        self.cycle_label.setFont(consolas_font)
+        self.label_value.setGeometry(QtCore.QRect(1083, 345, 10, 21))
+        self.label_value.setFont(consolas_font)
 
     def setup_buttons_ui(self):
         segoe_font = QtGui.QFont()
@@ -141,6 +144,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 background-color: #71d6ff;
             }
         """)
+        self.machine_code.itemDoubleClicked.connect(self.set_item_breakpoint)
 
         self.mapped_symbols.setGeometry(QtCore.QRect(740, 50, 240, 500))
         self.mapped_symbols.setFont(consolas_font)
@@ -149,6 +153,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.output.setGeometry(QtCore.QRect(10, 560, 1181, 181))
         self.output.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.output.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+
+        self.memory_line_list.setGeometry(QtCore.QRect(15, 10, 685, 600))
+        self.memory_line_list.setFont(consolas_font)
+        self.memory_line_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
+        self.memory_line_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.memory_line_list.setAutoScroll(False)
 
         self.registers_table.setGeometry(QtCore.QRect(1000, 50, 191, 251))
         self.registers_table.setFont(consolas_font)
@@ -169,7 +179,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # Program
         self.menuProgram.addAction(self.actionNew)
         self.menuProgram.addAction(self.actionLoad)
-        self.menuProgram.addAction(self.actionLoad_additional)
         self.menuProgram.addAction(self.actionSave_as)
 
         self.menuProgram.addSeparator()
@@ -195,9 +204,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menubar.setGeometry(QtCore.QRect(0, 0, 1200, 29))
         self.setMenuBar(self.menubar)
         self.setStatusBar(self.statusbar)
+        self.memory_dump_window.setFixedSize(715, 620)
 
     def retranslate_ui(self):
         self.setWindowTitle("Viking")
+        self.memory_dump_window.setWindowTitle('Memory dump')
 
         _translate = QtCore.QCoreApplication.translate
 
@@ -225,11 +236,11 @@ class MainWindow(QtWidgets.QMainWindow):
             translate("MainWindow",
                       "<html><head/><body><p>Registers<span style=\" font-weight:600;\">:</span></p></body></html>"))
 
-        self.cycle_label.setText(translate("MainWindow", "Cycle: 0"))
+        self.label_value.setText(translate("MainWindow", "0"))
 
-        self.buttons_label.setText(
+        self.cycle_label.setText(
             translate("MainWindow",
-                      "<html><head/><body><p>Control<span style=\" font-weight:600;\">:</span></p></body></html>"))
+                      "<html><head/><body><p>Cycle<span style=\" font-weight:600;\">:</span></p></body></html>"))
 
     def retranslate_menu_ui(self, translate):
         self.menuProgram.setTitle(translate("MainWindow", "Program"))
@@ -237,14 +248,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def retranslate_actions_ui(self, translate):
         self.actionNew.setText(translate("MainWindow", "New"))
+        self.actionNew.setShortcut(translate("MainWindow", "Ctrl+N"))
 
         self.actionLoad.setText(translate("MainWindow", "Load"))
-        self.actionLoad_additional.setText(translate("MainWindow", "Load aditional"))
+        self.actionLoad.setShortcut(translate("MainWindow", "Ctrl+L"))
 
         self.actionSave_as.setText(translate("MainWindow", "Save as"))
+        self.actionSave_as.setShortcut(translate("MainWindow", "Ctrl+S"))
 
         self.actionAssemble.setText(translate("MainWindow", "Assemble"))
-        self.actionAssemble.setShortcut(translate("MainWindow", "Ctrl+A"))
+        self.actionAssemble.setShortcut(translate("MainWindow", "Ctrl+K"))
 
         self.actionExit.setText(translate("MainWindow", "Exit"))
         self.actionExit.setShortcut(translate("MainWindow", "Ctrl+Del"))
@@ -252,10 +265,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.actionSet_breakpoint.setText(translate("MainWindow", "Set breakpoint"))
 
         self.actionSet_machine_cycle_delay.setText(translate("MainWindow", "Set machine cycle delay"))
+        self.actionSet_machine_cycle_delay.setShortcut(translate("MainWindow", "Ctrl+D"))
 
         self.actionClear_terminal.setText(translate("MainWindow", "Clear terminal"))
 
         self.actionMemory_dump.setText(translate("MainWindow", "Memory dump"))
+        self.actionMemory_dump.setShortcut(translate("MainWindow", "Ctrl+M"))
 
     def retranslate_lists_ui(self):
         self.registers_table.setSortingEnabled(False)
@@ -276,59 +291,116 @@ class MainWindow(QtWidgets.QMainWindow):
         self.do_one_step.setText(translate("MainWindow", "Step"))
         self.run_assembly.setText(translate("MainWindow", "Run"))
 
-    def get_program(self):
-        program = self.assembly_code.toPlainText().splitlines()
-
-        if not program:
-            return []
-
-        program_without_end_lines = program.copy()
-        for i in range(len(program) - 1, 0, -1):
-            if not program[i]:
-                program_without_end_lines.pop(i)
-            else:
-                break
-
-        return program_without_end_lines
-
     def connect_actions(self):
         self.run_assembly.clicked.connect(self.run)
         self.do_one_step.clicked.connect(self.do_step)
         self.actionNew.triggered.connect(self.assembly_code.clear)
         self.actionAssemble.triggered.connect(self.assemble)
+        self.actionClear_terminal.triggered.connect(self.clear_terminal)
+        self.actionSet_machine_cycle_delay.triggered.connect(self.set_machine_cycle_delay)
+        self.actionSet_breakpoint.triggered.connect(self.set_breakpoint)
+        self.actionMemory_dump.triggered.connect(self.show_memory_dump)
+        self.actionLoad.triggered.connect(self.open_file)
+        self.actionSave_as.triggered.connect(self.save_file)
         self.actionExit.triggered.connect(self.quit_app)
         self.reset_machine.clicked.connect(self.reset)
         self.stop_machine.clicked.connect(self.stop)
 
-    def quit_app(self):
-        raise SystemExit
+    def open_file(self):
+        options = QtWidgets.QFileDialog.Options()
+        file_name, _ = QtWidgets.QFileDialog.getOpenFileName(self, "QFileDialog.getOpenFileName()", "", "Asm Files (*.asm)",
+                                                             options=options)
+        if file_name:
+            with open(file_name, 'r') as file:
+                self.assembly_code.setPlainText(file.read())
 
-    def set_output_item_text(self, item_id, text=' Done.'):
-        idx = 0
-        while 1:
-            if self.output.item(idx) is None:
-                return False
+    def save_file(self):
+        options = QtWidgets.QFileDialog.Options()
+        file_name, _ = QtWidgets.QFileDialog.getSaveFileName(self, "QFileDialog.getSaveFileName()", "",
+                                                             "Asm Files (*.asm)", options=options)
+        if file_name:
+            with open(file_name, 'w') as file:
+                file.write(self.assembly_code.toPlainText())
 
-            if str(item_id) == str(id(self.output.item(idx))):
-                self.output.item(idx).setText(self.output.item(idx).text() + text)
-                return True
-            idx += 1
+    def set_machine_cycle_delay(self):
+        segoe_font = QtGui.QFont()
+        segoe_font.setFamily("Segoe UI")
+        segoe_font.setPointSize(10)
+        segoe_font.setBold(False)
+        segoe_font.setWeight(50)
+
+        input_dialog = QtWidgets.QInputDialog(self)
+        input_dialog.setInputMode(QtWidgets.QInputDialog.TextInput)
+        input_dialog.setFixedSize(300, 700)
+        input_dialog.setFont(segoe_font)
+
+        input_dialog.setWindowTitle('Machine delay')
+        input_dialog.setLabelText('Enter the new delay value:')
+
+        ok = input_dialog.exec()
+
+        if ok:
+            self._delay = float(input_dialog.textValue())
+
+    def set_breakpoint(self):
+        segoe_font = QtGui.QFont()
+        segoe_font.setFamily("Segoe UI")
+        segoe_font.setPointSize(10)
+        segoe_font.setBold(False)
+        segoe_font.setWeight(50)
+
+        input_dialog = QtWidgets.QInputDialog(self)
+        input_dialog.setInputMode(QtWidgets.QInputDialog.TextInput)
+        input_dialog.setFixedSize(300, 700)
+        input_dialog.setFont(segoe_font)
+
+        input_dialog.setWindowTitle('Breakpoint')
+        input_dialog.setLabelText('Enter the hex address to set breakpoint:')
+        ok = input_dialog.exec()
+
+        if ok:
+            self._breakpoint_value = input_dialog.textValue()
+
+    def set_item_breakpoint(self, item):
+        self._breakpoint_value = item.text()[5:9]
+        segoe_font = QtGui.QFont()
+        segoe_font.setFamily("Segoe UI")
+        segoe_font.setPointSize(10)
+        segoe_font.setBold(False)
+        segoe_font.setWeight(50)
+
+        warning = QtWidgets.QMessageBox(self)
+        warning.setFixedSize(340, 200)
+        warning.setFont(segoe_font)
+
+        warning.setWindowTitle('Breakpoint')
+        warning.setText(f'Breakpoint set to address "{self._breakpoint_value}"')
+        warning.exec()
+
+    def show_memory_dump(self):
+        self.memory_dump_window.show()
+
+    def clear_terminal(self):
+        self.output.clear()
 
     def reset(self):
         self._stop = True
         self._stepping = False
         self._current_step = 0
         self._current_id = None
-
-        if not self._running:
-            self.device.reset()
-            self.machine_code.clear()
-            self.mapped_symbols.clear()
-            self.cycle_label.setText('Cycle: 0')
-            self._assembled = False
+        self.device.reset()
+        self.machine_code.clear()
+        self.mapped_symbols.clear()
+        self.memory_line_list.clear()
+        self.label_value.setText('0')
+        self.label_value.setGeometry(QtCore.QRect(1083, 345, 10, 21))
+        self._assembled = False
 
     def stop(self):
         self._stop = True
+
+    def quit_app(self):
+        raise SystemExit
 
     def assemble(self):
         self._assembled = True
@@ -341,18 +413,21 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # No program given
         if not program:
-            self.set_output_item_text(first_item)
+            if not self.set_output_item_text(first_item):
+                first_item = QtWidgets.QListWidgetItem('Assembling...')
+                self.output.addItem(first_item)
             self.output.addItem(QtWidgets.QListWidgetItem())
             self.output.scrollToItem(first_item, QtWidgets.QAbstractItemView.PositionAtTop)
             return
 
-        response, steps, symbols, program_info, codes = self.device.generate_output(program)
+        symbols, program_info, codes = self.device.generate_symbols(program)
 
         self.set_output_item_text(first_item)
 
         # Output the machine_code
         for machine_code in codes:
-            self.machine_code.addItem(QtWidgets.QListWidgetItem(machine_code))
+            item = QtWidgets.QListWidgetItem(machine_code)
+            self.machine_code.addItem(item)
 
         # Output the information about the program
         for line in program_info:
@@ -383,7 +458,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     self.device.reset()
                     self.machine_code.clear()
                     self.mapped_symbols.clear()
-                    self.cycle_label.setText('Cycle: 0')
+                    self.label_value.setText('0')
+                    self.label_value.setGeometry(QtCore.QRect(1083, 345, 10, 21))
                     self._assembled = False
                 break
 
@@ -395,16 +471,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self._assembled:
             self.assemble()
 
-        response, steps, symbols, program_info, codes = self.device.get_output()
+        step, result = self.device.get_step()
 
-        if response is None:
+        message = getattr(step, 'message')
+
+        if result is None and self._current_step == 0:
             item = QtWidgets.QListWidgetItem('No program written.')
             self.output.addItem(item)
             self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
             self._assembled = False
             return False
 
-        if len(steps) == self._current_step:
+        elif result is None and not message:
             item = QtWidgets.QListWidgetItem('No more steps available.')
             self.output.addItem(item)
             self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
@@ -416,17 +494,22 @@ class MainWindow(QtWidgets.QMainWindow):
             self.output.addItem(item)
             self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
 
-        step = steps[self._current_step]
-        self._current_step += 1
-
         context = getattr(step, 'context')
-        carry = getattr(step, 'carry')
-        memmory = getattr(step, 'memory')
+        self.update_registers(context)
+
+        memory = getattr(step, 'memory')
+        self.update_memory_dump(memory)
+
         instruction = getattr(step, 'instruction')
         cycle = getattr(step, 'cycle')
         output = getattr(step, 'output')
         message = getattr(step, 'message')
-        self.cycle_label.setText(self.cycle_label.text().split(':')[0] + ': ' + str(cycle))
+
+        if len(str(cycle)) > len(self.label_value.text()):
+            geo = self.label_value.geometry()
+            self.label_value.setGeometry(QtCore.QRect(geo.x() - 5, 345, geo.width() + 10, 21))
+
+        self.label_value.setText(str(cycle))
         if self._current_step == 1:
             self.update_machine_code(str(instruction)[2:].rjust(4, '0'), True)
         else:
@@ -439,9 +522,18 @@ class MainWindow(QtWidgets.QMainWindow):
             return False
 
         if output:
-            self.set_output_item_text(self._current_id, output)
+            if not self.set_output_item_text(self._current_id, output):
+                item = QtWidgets.QListWidgetItem(output)
+                self._current_id = id(item)
+                self.output.addItem(item)
+                self.output.scrollToItem(item, QtWidgets.QAbstractItemView.PositionAtTop)
 
-        self.wait(0.05)
+        if self._breakpoint_value == str(instruction)[2:].rjust(4, '0'):
+            return False
+
+        self.wait()
+        self._current_step += 1
+
         return True
 
     def update_machine_code(self, current_instruction, first):
@@ -473,11 +565,89 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 idx += 1
 
-    def wait(self, seconds):
+    def update_registers(self, registers):
+        hex_registers = []
+        for val in registers:
+            hex_registers.append(hex(int(val))[2:].rjust(4, '0'))
+
+        idx = 0
+        for i in range(10):
+            if i == 8:
+                continue
+
+            self.registers_table.item(i).setText(self.registers_table.item(i).text()[:-4] + hex_registers[idx])
+            idx += 1
+
+    def update_memory_dump(self, memory):
+        k = 0
+        self.memory_line_list.clear()
+        while k < len(memory) * 2:
+            dump_line = str(self.to_hex(k)) + ': '
+            l = 0
+            while l < 8:
+                dump_line = dump_line + self.to_hex(memory[int(k / 2) + l]) + ' '
+                l += 1
+            dump_line += '|'
+            l = 0
+
+            while l < 8:
+                ch1 = memory[int(k / 2) + l] >> 8
+                ch2 = memory[int(k / 2) + l] & 0xff
+                if 32 <= ch1 <= 126:
+                    dump_line += chr(ch1)
+                else:
+                    dump_line += '.'
+                if 32 <= ch2 <= 126:
+                    dump_line += chr(ch2)
+                else:
+                    dump_line += '.'
+                l += 1
+
+            dump_line += '|'
+            item = QtWidgets.QListWidgetItem()
+            item.setText(dump_line)
+            self.memory_line_list.addItem(item)
+            k += 16
+
+    def set_output_item_text(self, item_id, text=' Done.'):
+        idx = 0
+        while 1:
+            if self.output.item(idx) is None:
+                return False
+
+            if str(item_id) == str(id(self.output.item(idx))):
+                self.output.item(idx).setText(self.output.item(idx).text() + text)
+                return True
+            idx += 1
+
+    def get_program(self):
+        program = self.assembly_code.toPlainText().splitlines()
+
+        if not program:
+            return []
+
+        program_without_end_lines = program.copy()
+        for i in range(len(program) - 1, 0, -1):
+            if not program[i]:
+                program_without_end_lines.pop(i)
+            else:
+                break
+
+        return program_without_end_lines
+
+    def wait(self):
         QtWidgets.qApp.processEvents()
+
+        if self._delay == 0:
+            return
+
         started = time.time()
-        while time.time() - started < seconds:
+        while time.time() - started < self._delay:
             QtWidgets.qApp.processEvents()
+
+    @staticmethod
+    def to_hex(n):
+        return '%s' % ('0000%x' % (n & 0xffff))[-4:]
 
 
 if __name__ == '__main__':
