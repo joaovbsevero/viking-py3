@@ -42,6 +42,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_machine = QtWidgets.QPushButton(self.central_widget)
         self.do_one_step = QtWidgets.QPushButton(self.central_widget)
         self.run_assembly = QtWidgets.QPushButton(self.central_widget)
+        self.assemble_button = QtWidgets.QPushButton(self.central_widget)
 
         # Labels
         self.program_label = QtWidgets.QLabel(self.central_widget)
@@ -72,7 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def setup_ui(self):
         # Main window
         self.setObjectName("MainWindow")
-        self.setFixedSize(1200, 800)
+        self.setFixedSize(1200, 650)
 
         self.setup_main_widgets_ui()
         self.setup_lists_ui()
@@ -119,16 +120,19 @@ class MainWindow(QtWidgets.QMainWindow):
         segoe_font.setFamily("Segoe UI")
         segoe_font.setPointSize(12)
 
-        self.run_assembly.setGeometry(QtCore.QRect(1000, 380, 191, 38))
+        self.assemble_button.setGeometry(QtCore.QRect(1000, 380, 191, 38))
+        self.assemble_button.setFont(segoe_font)
+
+        self.run_assembly.setGeometry(QtCore.QRect(1000, 423, 191, 38))
         self.run_assembly.setFont(segoe_font)
 
-        self.do_one_step.setGeometry(QtCore.QRect(1000, 423, 191, 38))
+        self.do_one_step.setGeometry(QtCore.QRect(1000, 467, 191, 38))
         self.do_one_step.setFont(segoe_font)
 
-        self.stop_machine.setGeometry(QtCore.QRect(1000, 467, 191, 38))
+        self.stop_machine.setGeometry(QtCore.QRect(1000, 510, 191, 38))
         self.stop_machine.setFont(segoe_font)
 
-        self.reset_machine.setGeometry(QtCore.QRect(1000, 510, 191, 38))
+        self.reset_machine.setGeometry(QtCore.QRect(1000, 553, 191, 38))
         self.reset_machine.setFont(segoe_font)
 
     def setup_lists_ui(self):
@@ -136,7 +140,7 @@ class MainWindow(QtWidgets.QMainWindow):
         consolas_font.setFamily("Consolas")
         consolas_font.setPointSize(11)
 
-        self.machine_code.setGeometry(QtCore.QRect(430, 50, 290, 500))
+        self.machine_code.setGeometry(QtCore.QRect(430, 50, 290, 350))
         self.machine_code.setFont(consolas_font)
         self.machine_code.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.machine_code.setStyleSheet("""
@@ -146,15 +150,15 @@ class MainWindow(QtWidgets.QMainWindow):
         """)
         self.machine_code.itemDoubleClicked.connect(self.set_item_breakpoint)
 
-        self.mapped_symbols.setGeometry(QtCore.QRect(740, 50, 240, 500))
+        self.mapped_symbols.setGeometry(QtCore.QRect(740, 50, 240, 350))
         self.mapped_symbols.setFont(consolas_font)
         self.mapped_symbols.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        self.output.setGeometry(QtCore.QRect(10, 560, 1181, 181))
+        self.output.setGeometry(QtCore.QRect(10, 410, 970, 181))
         self.output.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.output.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
 
-        self.memory_line_list.setGeometry(QtCore.QRect(15, 10, 685, 600))
+        self.memory_line_list.setGeometry(QtCore.QRect(15, 10, 685, 450))
         self.memory_line_list.setFont(consolas_font)
         self.memory_line_list.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         self.memory_line_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
@@ -200,11 +204,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.menubar.addAction(self.menuMachine.menuAction())
 
     def setup_main_widgets_ui(self):
-        self.assembly_code.setGeometry(QtCore.QRect(10, 50, 400, 500))
+        self.assembly_code.setGeometry(QtCore.QRect(10, 50, 400, 350))
+        self.assembly_code.setAcceptDrops(True)
+        self.assembly_code.dropEvent = self.drop_event
+
         self.menubar.setGeometry(QtCore.QRect(0, 0, 1200, 29))
         self.setMenuBar(self.menubar)
+
         self.setStatusBar(self.statusbar)
-        self.memory_dump_window.setFixedSize(715, 620)
+
+        self.memory_dump_window.setFixedSize(715, 470)
 
     def retranslate_ui(self):
         self.setWindowTitle("Viking")
@@ -290,6 +299,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.reset_machine.setText(translate("MainWindow", "Reset"))
         self.do_one_step.setText(translate("MainWindow", "Step"))
         self.run_assembly.setText(translate("MainWindow", "Run"))
+        self.assemble_button.setText(translate("MainWindow", 'Assemble'))
+
+    def drop_event(self, e: QtGui.QDropEvent) -> None:
+        with open(str(e.mimeData().text())[8:], 'r') as file:
+            self.assembly_code.setPlainText(file.read())
 
     def connect_actions(self):
         self.run_assembly.clicked.connect(self.run)
