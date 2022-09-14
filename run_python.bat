@@ -1,0 +1,1 @@
+pip install -r requirements.txt --use-feature=2020-resolver --user && python src/main.py
