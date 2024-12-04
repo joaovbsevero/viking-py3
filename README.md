@@ -1,6 +1,6 @@
 # Viking ISA
 
-Version of the original viking simulator from Sergio Johann Filho for python 3
+Version of the original viking simulator from [Sergio Johann Filho for python 3](https://github.com/sjohann81/viking)
 
 ## How to run
 
